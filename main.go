@@ -9,6 +9,11 @@ import (
 	"path/filepath"
 	"sync"
 	"trace"
+
+	"github.com/stretchr/objx"
+
+	"github.com/stretchr/gomniauth"
+	"github.com/stretchr/gomniauth/providers/github"
 )
 
 type templateHandler struct {
@@ -21,12 +26,25 @@ func (t *templateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	t.once.Do(func() {
 		t.templ = template.Must(template.ParseFiles(filepath.Join("templates", t.filename)))
 	})
-	t.templ.Execute(w, r)
+	data := map[string]interface{}{
+		"Host": r.Host,
+	}
+	if authCookie, err := r.Cookie("auth"); err == nil {
+		data["UserData"] = objx.MustFromBase64(authCookie.Value)
+	}
+	t.templ.Execute(w, data)
 }
 
 func main() {
 	var addr = flag.String("addr", ":8080", "The addr of the application.")
 	flag.Parse()
+
+	gomniauth.SetSecurityKey("running")
+	gomniauth.WithProviders(github.New(
+		"505d3d234905bc542245",
+		"b6c4593bf91fcb8e83cbb9f214ffbd216425ca4c",
+		"http://localhost:8080/auth/callback/github"))
+
 	room := newRoom()
 	room.tracer = trace.New(os.Stdout)
 
@@ -34,6 +52,16 @@ func main() {
 	http.Handle("/login", &templateHandler{filename: "login.html"})
 	http.HandleFunc("/auth/", loginHandler)
 	http.Handle("/room", room)
+	http.HandleFunc("/logout", func(w http.ResponseWriter, r *http.Request) {
+		http.SetCookie(w, &http.Cookie{
+			Name:   "auth",
+			Value:  "",
+			Path:   "/",
+			MaxAge: -1,
+		})
+		w.Header().Set("Location", "/chat")
+		w.WriteHeader(http.StatusTemporaryRedirect)
+	})
 
 	go room.run()
 
