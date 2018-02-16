@@ -16,6 +16,12 @@ import (
 	"github.com/stretchr/gomniauth/providers/github"
 )
 
+var avatars Avatar = TryAvatars{
+	UseFileSystemAvatar,
+	UseAuthAvatar,
+	UseGravatar,
+}
+
 type templateHandler struct {
 	once     sync.Once
 	filename string
@@ -49,7 +55,11 @@ func main() {
 	room.tracer = trace.New(os.Stdout)
 
 	http.Handle("/chat", MustAuth(&templateHandler{filename: "chat.html"}))
+	http.Handle("/upload", &templateHandler{filename: "upload.html"})
 	http.Handle("/login", &templateHandler{filename: "login.html"})
+
+	http.HandleFunc("/uploader", uploaderHandler)
+	http.Handle("/avatars/", http.StripPrefix("/avatars/", http.FileServer(http.Dir("./avatars"))))
 	http.HandleFunc("/auth/", loginHandler)
 	http.Handle("/room", room)
 	http.HandleFunc("/logout", func(w http.ResponseWriter, r *http.Request) {
